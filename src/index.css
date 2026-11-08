@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -44,9 +44,39 @@ body {
 
 /* Glassmorphism utility */
 .glass {
-  background: rgba(255,255,255,0.08);
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 1rem;
-}
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.glass-dark {
+  background: rgba(45, 10, 69, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Ant design theme overrides */
+.ant-btn-primary {
+  background-color: #A34BD0 !important;
+  border-color: #A34BD0 !important;
+}
+.ant-btn-primary:hover {
+  background-color: #AD49E1 !important;
+  border-color: #AD49E1 !important;
+}
+
+.ant-tabs-ink-bar {
+  background-color: #A34BD0 !important;
+}
+
+.ant-tabs-top > .ant-tabs-nav .ant-tabs-ink-bar {
+  height: 3px !important;
+  border-radius: 3px;
+}
+
+.ant-tabs .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #A34BD0 !important;
+  font-weight: 700 !important;
+}

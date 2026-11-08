@@ -10,6 +10,8 @@ import StartStreaming from "./Components/Pages/Startstreaming";
 import StreamingContent from "./Components/Pages/Browse";
 import ProfilePage from "./Components/Pages/Profile";
 import WatchStream from "./Components/Pages/WatchStream.jsx";
+import VideoWatchPage from "./Components/Pages/VideoWatchPage.jsx";
+import SettingsPage from "./Components/Pages/Settings.jsx";
 import ProtectedRoute from "./Components/Common/ProtectedRoute.jsx";
 
 import Spin from "./assets/spinloading.svg";
@@ -39,8 +41,8 @@ function App() {
     <>
       <ToastContainer position="top-right" autoClose={3000} theme="dark" />
       {loading ? (
-        <div className="flex items-center justify-center min-h-screen bg-background">
-          <img src={Spin} alt="Loading..." className="w-28 h-28 object-contain" />
+        <div className="flex items-center justify-center min-h-screen bg-[#F8F9FD]">
+          <img src={Spin} alt="Loading..." className="w-24 h-24 object-contain" />
         </div>
       ) : (
         <Routes>
@@ -59,6 +61,8 @@ function App() {
               }
             />
             <Route path="watch/:id" element={<WatchStream />} />
+            <Route path="video/:id" element={<VideoWatchPage />} />
+            <Route path="video/*" element={<VideoWatchPage />} />
             <Route
               path="profile"
               element={
@@ -68,6 +72,14 @@ function App() {
               }
             />
             <Route path="profile/:uid" element={<ProfilePage />} />
+            <Route
+              path="settings"
+              element={
+                <ProtectedRoute>
+                  <SettingsPage />
+                </ProtectedRoute>
+              }
+            />
           </Route>
           <Route path="/*" element={<PageNotFound />} />
         </Routes>

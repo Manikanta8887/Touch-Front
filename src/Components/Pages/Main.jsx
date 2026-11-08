@@ -1,26 +1,32 @@
 import { useEffect, useState } from "react";
-import { Layout, Menu, Button, Avatar, Row, Col, Space } from "antd";
+import { Layout, Button, Avatar, Drawer, Input } from "antd";
 import { useDispatch, useSelector } from "react-redux";
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 import { setFirebaseUser, logoutUser } from "../Redux/userSlice";
 import {
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
-  HomeOutlined,
-  VideoCameraOutlined,
+  MenuOutlined,
+  CompassFilled,
+  PlaySquareFilled,
+  VideoCameraFilled,
   UserOutlined,
+  SettingFilled,
   LogoutOutlined,
   LoginOutlined,
-  PlaySquareOutlined,
+  PlayCircleFilled,
+  BellOutlined,
+  SearchOutlined,
+  UsergroupAddOutlined,
 } from "@ant-design/icons";
-import Logo from "../../assets/logo1.png";
 import { Outlet, useLocation, useNavigate, Link } from "react-router-dom";
+import { getSubscribedChannels } from "../../api/profile";
+import { logoutTokensApi, getRefreshToken } from "../../api/auth";
 
-const { Header, Sider, Content, Footer } = Layout;
+const { Header, Content } = Layout;
 
 const LiveStreamingPlatform = () => {
-  const [collapsed, setCollapsed] = useState(window.innerWidth < 768);
-  const [selectedKey, setSelectedKey] = useState("/livestreamingplatform");
+  const [collapsed, setCollapsed] = useState(window.innerWidth < 1024);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [subscribedChannels, setSubscribedChannels] = useState([]);
   const auth = getAuth();
   const dispatch = useDispatch();
   const firebaseUser = useSelector((state) => state.user.firebaseUser);
@@ -28,16 +34,26 @@ const LiveStreamingPlatform = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    setSelectedKey(location.pathname);
-  }, [location.pathname]);
+    if (firebaseUser?.uid) {
+      getSubscribedChannels(firebaseUser.uid)
+        .then((res) => {
+          if (res?.channels) setSubscribedChannels(res.channels);
+        })
+        .catch(() => {});
+    } else {
+      setSubscribedChannels([]);
+    }
+  }, [firebaseUser?.uid]);
 
   useEffect(() => {
     const handleResize = () => {
-      setCollapsed(window.innerWidth < 768);
+      if (window.innerWidth < 1024) {
+        setCollapsed(true);
+      }
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [location.pathname]);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -59,6 +75,10 @@ const LiveStreamingPlatform = () => {
 
   const handleLogout = async () => {
     try {
+      const refreshToken = getRefreshToken();
+      if (refreshToken) {
+        await logoutTokensApi(refreshToken);
+      }
       await signOut(auth);
       dispatch(logoutUser());
       navigate("/login");
@@ -71,132 +91,283 @@ const LiveStreamingPlatform = () => {
     ? `/livestreamingplatform/stream/${firebaseUser.uid}`
     : "/login";
 
-  return (
-    <Layout className="min-h-screen bg-background font-sans">
-      {/* Sticky Fixed Sider */}
-      <Sider
-        trigger={null}
-        collapsible
-        collapsed={collapsed}
-        className="bg-navy border-r border-border/20 shadow-xl flex flex-col justify-between z-40"
-        width={240}
-        collapsedWidth={70}
-        style={{
-          background: "#061B33",
-          position: "sticky",
-          top: 0,
-          height: "100vh",
-          overflowY: "auto",
+  const navMenuItems = [
+    {
+      key: "/livestreamingplatform",
+      label: "Browse Streams",
+      icon: <CompassFilled />,
+      path: "/livestreamingplatform",
+      exact: true,
+    },
+    {
+      key: "/livestreamingplatform/videos",
+      label: "Videos",
+      icon: <PlaySquareFilled />,
+      path: "/livestreamingplatform/videos",
+    },
+    {
+      key: "/livestreamingplatform/subscriptions",
+      label: "Subscriptions",
+      icon: <UsergroupAddOutlined />,
+      path: "/livestreamingplatform?tab=subscriptions",
+    },
+    {
+      key: "stream",
+      label: "Go Live",
+      icon: <VideoCameraFilled />,
+      path: streamerPath,
+    },
+    {
+      key: "/livestreamingplatform/profile",
+      label: "My Profile",
+      icon: <UserOutlined />,
+      path: "/livestreamingplatform/profile",
+    },
+    {
+      key: "/livestreamingplatform/settings",
+      label: "Settings",
+      icon: <SettingFilled />,
+      path: "/livestreamingplatform/settings",
+    },
+  ];
+
+  const isItemActive = (item) => {
+    if (item.exact) {
+      return location.pathname === item.path;
+    }
+    return location.pathname.startsWith(item.path);
+  };
+
+  const renderSidebarContent = (isMobile = false) => (
+    <div className="flex flex-col h-full bg-darkPurple text-white">
+      {/* Brand Header */}
+      <div
+        className="p-5 flex items-center gap-3 cursor-pointer border-b border-white/10"
+        onClick={() => {
+          navigate("/");
+          if (isMobile) setMobileDrawerOpen(false);
         }}
       >
-        <div
-          className="p-4 flex items-center gap-3 cursor-pointer border-b border-white/10 hover:bg-white/5 transition-colors"
-          onClick={() => navigate("/")}
-        >
-          <img src={Logo} alt="Logo" className="h-8 w-auto object-contain" />
-          {!collapsed && (
-            <span className="text-lg font-extrabold text-white tracking-wide">
-              Touch <span className="text-secondary">Live</span>
-            </span>
-          )}
+        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/40 flex-shrink-0">
+          <PlayCircleFilled className="text-white text-xl" />
         </div>
+        {(!collapsed || isMobile) && (
+          <span className="text-xl font-black text-white tracking-tight">
+            Touch<span className="text-secondary ml-1 font-semibold">Live</span>
+          </span>
+        )}
+      </div>
 
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[selectedKey]}
-          onClick={({ key }) => navigate(key)}
-          className="bg-transparent py-3 text-white/90 font-medium"
-          style={{ background: "transparent" }}
-          items={[
-            { key: "/livestreamingplatform", icon: <HomeOutlined className="text-secondary" />, label: "Browse Streams" },
-            { key: "/livestreamingplatform/videos", icon: <PlaySquareOutlined className="text-secondary" />, label: "Uploaded Videos" },
-            { key: streamerPath, icon: <VideoCameraOutlined className="text-secondary" />, label: "Go Live" },
-            { key: "/livestreamingplatform/profile", icon: <UserOutlined className="text-secondary" />, label: "My Profile" },
-          ]}
-        />
+      {/* Nav Menu Items */}
+      <div className="p-3 space-y-1.5 flex-1 overflow-y-auto">
+        {navMenuItems.map((item) => {
+          const active = isItemActive(item);
+          return (
+            <button
+              key={item.key}
+              onClick={() => {
+                navigate(item.path);
+                if (isMobile) setMobileDrawerOpen(false);
+              }}
+              title={item.label}
+              className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl font-bold text-sm transition-all duration-200 text-left ${
+                active
+                  ? "bg-primary text-white shadow-lg shadow-primary/35"
+                  : "text-slate-300 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              <span className={`text-lg ${active ? "text-white" : "text-slate-300"}`}>
+                {item.icon}
+              </span>
+              {(!collapsed || isMobile) && (
+                <span className="truncate">{item.label}</span>
+              )}
+            </button>
+          );
+        })}
 
-        <div className="p-3 border-t border-white/10 mt-auto">
-          {!collapsed && firebaseUser && (
-            <div className="flex items-center gap-3 p-2.5 mb-3 bg-darkPurple/80 rounded-xl border border-white/10 shadow-inner">
-              <Avatar src={firebaseUser.photoURL} icon={<UserOutlined />} className="bg-primary flex-shrink-0 border border-white/20" />
-              <div className="overflow-hidden text-xs">
-                <div className="font-bold text-white truncate">{firebaseUser.displayName}</div>
-                <div className="text-white/70 text-[11px] truncate">{firebaseUser.email}</div>
+        {/* Subscribed Channels Sidebar Section */}
+        {(!collapsed || isMobile) && subscribedChannels.length > 0 && (
+          <div className="pt-4 mt-3 border-t border-white/10">
+            <div className="flex items-center justify-between px-3 mb-2">
+              <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                Subscriptions
+              </span>
+              <span className="text-[10px] font-bold bg-white/10 text-white/80 px-2 py-0.5 rounded-full">
+                {subscribedChannels.length}
+              </span>
+            </div>
+            <div className="space-y-1">
+              {subscribedChannels.map((channel) => (
+                <div
+                  key={channel.uid}
+                  onClick={() => {
+                    navigate(`/livestreamingplatform/profile/${channel.uid}`);
+                    if (isMobile) setMobileDrawerOpen(false);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer transition-colors"
+                >
+                  <Avatar size={24} src={channel.profilePic} className="bg-primary flex-shrink-0">
+                    {channel.name?.charAt(0).toUpperCase() || "C"}
+                  </Avatar>
+                  <span className="text-xs font-semibold truncate flex-1">{channel.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Profile & Logout Section */}
+      <div className="p-4 border-t border-white/10 bg-navy">
+        {(!collapsed || isMobile) && firebaseUser && (
+          <div className="flex items-center gap-3 p-3 mb-3 bg-white/5 rounded-2xl border border-white/10">
+            <Avatar
+              size={42}
+              src={firebaseUser.photoURL}
+              icon={<UserOutlined />}
+              className="bg-primary flex-shrink-0 border-2 border-white/20"
+            />
+            <div className="overflow-hidden min-w-0">
+              <div className="font-extrabold text-white text-sm truncate">
+                {firebaseUser.displayName}
+              </div>
+              <div className="text-slate-400 text-xs truncate">
+                {firebaseUser.email}
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {firebaseUser ? (
-            <Button
-              type="primary"
-              danger
-              block={!collapsed}
-              icon={<LogoutOutlined />}
-              onClick={handleLogout}
-              className="bg-red-600 hover:bg-red-700 border-none font-semibold rounded-xl shadow-md"
-            >
-              {!collapsed && "Logout"}
-            </Button>
-          ) : (
-            <Button
-              type="primary"
-              block={!collapsed}
-              icon={<LoginOutlined />}
-              onClick={() => navigate("/login")}
-              className="bg-primary hover:bg-secondary border-none font-semibold rounded-xl shadow-md"
-            >
-              {!collapsed && "Login"}
-            </Button>
-          )}
-        </div>
-      </Sider>
+        {firebaseUser ? (
+          <Button
+            type="primary"
+            danger
+            block
+            icon={<LogoutOutlined />}
+            onClick={handleLogout}
+            className="bg-[#EF4444] hover:bg-[#DC2626] border-none font-bold rounded-xl h-11 text-sm shadow-md"
+          >
+            {(!collapsed || isMobile) && "Logout"}
+          </Button>
+        ) : (
+          <Button
+            type="primary"
+            block
+            icon={<LoginOutlined />}
+            onClick={() => navigate("/login")}
+            className="bg-primary hover:bg-secondary border-none font-bold rounded-xl h-11 text-sm shadow-md"
+          >
+            {(!collapsed || isMobile) && "Sign In"}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
 
-      <Layout className="bg-background flex flex-col flex-1 min-w-0">
+  return (
+    <Layout className="min-h-screen bg-background font-sans flex flex-row">
+      {/* Desktop Sider */}
+      <div
+        className={`hidden md:block sticky top-0 h-screen transition-all duration-300 z-30 shadow-xl flex-shrink-0 ${
+          collapsed ? "w-20" : "w-64"
+        }`}
+      >
+        {renderSidebarContent(false)}
+      </div>
+
+      {/* Mobile Drawer */}
+      <Drawer
+        placement="left"
+        closable={false}
+        onClose={() => setMobileDrawerOpen(false)}
+        open={mobileDrawerOpen}
+        styles={{ body: { padding: 0 } }}
+        width={260}
+      >
+        {renderSidebarContent(true)}
+      </Drawer>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+        {/* Top Navbar */}
         <Header
-          className="sticky top-0 z-30 px-6 py-3 flex items-center justify-between shadow-sm h-auto"
+          className="sticky top-0 z-20 px-4 sm:px-6 py-3 flex items-center justify-between shadow-sm h-16 leading-normal"
           style={{ background: "#FFFFFF", borderBottom: "1px solid #D9D9D9" }}
         >
-          <Row align="middle" justify="space-between" className="w-full">
-            <Col flex="none">
-              <Button
-                type="text"
-                icon={collapsed ? <MenuUnfoldOutlined className="text-darkPurple text-lg" /> : <MenuFoldOutlined className="text-darkPurple text-lg" />}
-                onClick={() => setCollapsed(!collapsed)}
-                className="text-darkPurple hover:text-primary hover:bg-background"
-              />
-            </Col>
+          {/* Left: Mobile Toggle & Desktop Sider Toggle */}
+          <div className="flex items-center gap-3">
+            <Button
+              type="text"
+              icon={<MenuOutlined className="text-lg text-darkPurple" />}
+              onClick={() => {
+                if (window.innerWidth < 768) {
+                  setMobileDrawerOpen(true);
+                } else {
+                  setCollapsed(!collapsed);
+                }
+              }}
+              className="text-darkPurple hover:text-primary hover:bg-slate-100 rounded-lg p-2 flex items-center justify-center"
+            />
 
-            <Col flex="none">
-              <Space size="middle" align="center">
-                {firebaseUser ? (
-                  <Link to="/livestreamingplatform/profile" className="flex items-center gap-2 text-darkPurple font-bold hover:text-primary transition-colors">
-                    <Avatar
-                      src={firebaseUser.photoURL}
-                      icon={<UserOutlined />}
-                      alt="Profile"
-                      className="border-2 border-primary cursor-pointer shadow-sm"
-                    />
-                    <span className="hidden sm:inline text-sm">{firebaseUser.displayName}</span>
-                  </Link>
-                ) : (
-                  <Button type="primary" size="small" onClick={() => navigate("/login")} className="bg-primary hover:bg-secondary text-white border-none rounded-lg font-semibold px-4">
-                    Sign In
-                  </Button>
-                )}
-              </Space>
-            </Col>
-          </Row>
+            {/* Quick Search Bar */}
+            <div className="hidden sm:flex items-center relative w-64 md:w-80">
+              <Input
+                placeholder="Search streams or videos..."
+                prefix={<SearchOutlined className="text-text mr-1" />}
+                onPressEnter={(e) => {
+                  navigate(`/livestreamingplatform?q=${encodeURIComponent(e.target.value)}`);
+                }}
+                className="rounded-full bg-background border-border h-9 text-xs focus:border-primary"
+              />
+            </div>
+          </div>
+
+          {/* Right: Notification Bell & Profile Avatar */}
+          <div className="flex items-center gap-3">
+            <button
+              className="w-9 h-9 rounded-full bg-background hover:bg-slate-100 border border-border flex items-center justify-center text-text hover:text-primary transition-colors"
+              title="Notifications"
+            >
+              <BellOutlined className="text-base" />
+            </button>
+
+            {firebaseUser ? (
+              <Link
+                to="/livestreamingplatform/profile"
+                className="flex items-center gap-2 hover:opacity-90 transition-opacity"
+              >
+                <Avatar
+                  src={firebaseUser.photoURL}
+                  icon={<UserOutlined />}
+                  className="bg-primary border border-primary cursor-pointer"
+                  size={36}
+                />
+              </Link>
+            ) : (
+              <Link to="/login">
+                <Button
+                  type="primary"
+                  size="small"
+                  className="bg-primary hover:bg-secondary text-white border-none rounded-xl font-bold px-4 h-9 shadow-sm"
+                >
+                  Sign In
+                </Button>
+              </Link>
+            )}
+          </div>
         </Header>
 
-        <Content className="p-4 sm:p-6 bg-background min-h-[calc(100vh-120px)]">
+        {/* Dynamic Route Content */}
+        <Content className="p-4 sm:p-6 lg:p-8 flex-1">
           <Outlet />
         </Content>
 
-        <Footer className="text-center py-4 bg-card border-t border-border text-xs text-text">
-          © {new Date().getFullYear()} Touch Live. Built for sub-second live streaming.
-        </Footer>
-      </Layout>
+        {/* Footer */}
+        <footer className="text-center py-4 bg-card border-t border-border text-xs text-text">
+          © {new Date().getFullYear()} Touch Live. Powered by WebRTC sub-second live streaming.
+        </footer>
+      </div>
     </Layout>
   );
 };
