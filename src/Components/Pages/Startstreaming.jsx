@@ -5,8 +5,6 @@ import { setIsStreaming, setStreamTitle } from "../Redux/streamSlice.js";
 import {
   Button,
   Card,
-  Space,
-  message,
   Input,
   Row,
   Col,
@@ -16,18 +14,19 @@ import {
   Tag,
   Avatar,
   Tooltip,
+  message,
 } from "antd";
 import {
-  VideoCameraOutlined,
+  VideoCameraFilled,
   StopOutlined,
   SendOutlined,
   AudioOutlined,
   AudioMutedOutlined,
   DesktopOutlined,
-  EyeOutlined,
   SettingOutlined,
-  CrownOutlined,
+  CrownFilled,
   CopyOutlined,
+  MessageFilled,
 } from "@ant-design/icons";
 import socket from "../../socket";
 import { getIceServers } from "../../utils/iceServers";
@@ -43,7 +42,6 @@ const StartStreaming = () => {
   const videoRef = useRef(null);
   const chatEndRef = useRef(null);
   const peerConnections = useRef(new Map());
-  // BUG-011/P3-14: Always-current ref for localStream to fix stale closure in handleViewerJoined
   const localStreamRef = useRef(null);
 
   const [localStream, setLocalStream] = useState(null);
@@ -55,6 +53,8 @@ const StartStreaming = () => {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [viewerCount, setViewerCount] = useState(0);
   const [inputTitle, setInputTitle] = useState(streamTitle || "");
+  const [category, setCategory] = useState("Gaming");
+  const [visibility, setVisibility] = useState("Public");
   const [streamDuration, setStreamDuration] = useState(0);
 
   // Pre-stream Device Selection state
@@ -65,6 +65,32 @@ const StartStreaming = () => {
   const [selectedAudioDevice, setSelectedAudioDevice] = useState("");
   const [deviceCheckStream, setDeviceCheckStream] = useState(null);
   const previewVideoRef = useRef(null);
+
+  // Auto-initialize camera preview on mount if not already started
+  useEffect(() => {
+    let unmounted = false;
+    const startPreview = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        if (!unmounted && videoRef.current) {
+          videoRef.current.srcObject = stream;
+          setLocalStream(stream);
+          localStreamRef.current = stream;
+          setOrigVideoTrack(stream.getVideoTracks()[0]);
+        }
+      } catch (err) {
+        console.warn("Camera preview initialization:", err);
+      }
+    };
+
+    if (!isStreaming) {
+      startPreview();
+    }
+
+    return () => {
+      unmounted = true;
+    };
+  }, [isStreaming]);
 
   // Timer effect for live stream duration
   useEffect(() => {
@@ -84,7 +110,6 @@ const StartStreaming = () => {
     return `${hrs > 0 ? `${hrs}:` : ""}${mins < 10 ? "0" : ""}${mins}:${secs < 10 ? "0" : ""}${secs}`;
   };
 
-  // Enumerate Media Devices for Pre-stream Check
   const getDevices = async () => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -183,15 +208,17 @@ const StartStreaming = () => {
 
     try {
       closeDeviceCheck();
-      const constraints = {
-        video: selectedVideoDevice ? { deviceId: { exact: selectedVideoDevice } } : true,
-        audio: selectedAudioDevice ? { deviceId: { exact: selectedAudioDevice } } : true,
-      };
-
-      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-      setLocalStream(mediaStream);
-      localStreamRef.current = mediaStream; // BUG-011: keep ref in sync
-      setOrigVideoTrack(mediaStream.getVideoTracks()[0]);
+      let mediaStream = localStream;
+      if (!mediaStream || !mediaStream.active) {
+        const constraints = {
+          video: selectedVideoDevice ? { deviceId: { exact: selectedVideoDevice } } : true,
+          audio: selectedAudioDevice ? { deviceId: { exact: selectedAudioDevice } } : true,
+        };
+        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        setLocalStream(mediaStream);
+        localStreamRef.current = mediaStream;
+        setOrigVideoTrack(mediaStream.getVideoTracks()[0]);
+      }
 
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
@@ -206,6 +233,8 @@ const StartStreaming = () => {
 
       socket.emit("start-stream", {
         streamTitle: inputTitle,
+        category,
+        visibility,
         streamerId,
         streamerName,
         profilePic,
@@ -242,7 +271,6 @@ const StartStreaming = () => {
   // WebRTC Signaling Handlers
   useEffect(() => {
     const handleViewerJoined = async ({ viewerId }) => {
-      // BUG-011/P3-14: Read from ref instead of stale closure to always get current localStream
       const currentStream = localStreamRef.current;
       if (!currentStream) return;
       try {
@@ -311,7 +339,6 @@ const StartStreaming = () => {
     setMessageInput("");
   };
 
-  // Audio/Camera/Screen Controls
   const toggleMute = () => {
     if (localStream) {
       const audioTrack = localStream.getAudioTracks()[0];
@@ -335,7 +362,6 @@ const StartStreaming = () => {
   const toggleScreenShare = async () => {
     if (!isStreaming || !localStream) return;
     if (isScreenSharing) {
-      // BUG-012/P3-7: Get the current screen track before removing it
       const screenTrack = localStream.getVideoTracks()[0];
       if (origVideoTrack) {
         localStream.removeTrack(screenTrack);
@@ -346,7 +372,6 @@ const StartStreaming = () => {
           const s = senders.find((sns) => sns.track?.kind === "video");
           if (s) s.replaceTrack(origVideoTrack);
         });
-        // BUG-012: Stop screen track to dismiss OS screen-share indicator
         screenTrack.stop();
       }
       setIsScreenSharing(false);
@@ -383,143 +408,250 @@ const StartStreaming = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {/* Stream Controls Header */}
-      <div className="bg-card p-4 sm:p-6 rounded-2xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold text-navy mb-1">
-            {isStreaming ? streamTitle : "Stream Studio"}
-          </h2>
-          <div className="flex items-center gap-2">
-            {isStreaming ? (
-              <>
-                <span className="bg-red-600 text-white text-xs font-bold px-2.5 py-0.5 rounded-md uppercase tracking-wider animate-pulse">
-                  LIVE
-                </span>
-                <Tag icon={<EyeOutlined />} color="purple" className="border-primary text-primary bg-primary/10">
-                  {viewerCount} Viewers
-                </Tag>
-                <Tag color="blue">Duration: {formatDuration(streamDuration)}</Tag>
-              </>
-            ) : (
-              <Tag color="default">Offline</Tag>
-            )}
-          </div>
+    <div className="max-w-7xl mx-auto space-y-5">
+      {/* Top Header Bar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl sm:text-2xl font-extrabold text-darkPurple tracking-tight flex items-center gap-2">
+            <span>🎥 Stream Studio</span>
+          </h1>
+          {/* Status Badge */}
+          {isStreaming ? (
+            <span className="bg-[#EF4444] text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
+              LIVE ({formatDuration(streamDuration)})
+            </span>
+          ) : (
+            <span className="bg-[#DCFCE7] text-[#16A34A] text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 border border-[#BBF7D0]">
+              <span className="w-2 h-2 rounded-full bg-[#16A34A]"></span>
+              Ready
+            </span>
+          )}
         </div>
 
-        <Space size="middle">
-          {!isStreaming ? (
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2.5">
+          <Button
+            icon={<SettingOutlined />}
+            onClick={openDeviceCheck}
+            className="rounded-xl border-border text-darkPurple font-semibold h-10 px-4 hover:border-primary hover:text-primary"
+          >
+            Device Setup
+          </Button>
+
+          {isStreaming ? (
             <>
-              <Button icon={<SettingOutlined />} onClick={openDeviceCheck} className="border-border text-navy font-semibold rounded-lg hover:border-primary hover:text-primary">
-                Device Setup
+              <Button
+                icon={<CopyOutlined />}
+                onClick={handleCopyLink}
+                className="rounded-xl border-border text-darkPurple font-semibold h-10 px-3.5 hover:border-primary hover:text-primary"
+              >
+                Share
               </Button>
-              <Button type="primary" icon={<VideoCameraOutlined />} onClick={openDeviceCheck} className="bg-primary hover:bg-secondary text-white border-none font-semibold rounded-lg shadow-md">
-                Go Live
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button size="small" icon={<CopyOutlined />} onClick={handleCopyLink} className="border-border text-navy font-semibold rounded-lg hover:border-primary hover:text-primary">
-                Share Link
-              </Button>
-              <Button type="primary" danger icon={<StopOutlined />} onClick={handleStopStream} className="bg-red-600 hover:bg-red-700 border-none font-semibold rounded-lg">
+              <Button
+                type="primary"
+                danger
+                icon={<StopOutlined />}
+                onClick={handleStopStream}
+                className="bg-[#EF4444] hover:bg-[#DC2626] border-none font-bold rounded-xl h-10 px-5 shadow-md"
+              >
                 End Stream
               </Button>
             </>
+          ) : (
+            <Button
+              type="primary"
+              icon={<VideoCameraFilled />}
+              onClick={handleStartStream}
+              className="bg-primary hover:bg-secondary text-white border-none font-bold rounded-xl h-10 px-6 shadow-md shadow-primary/30 hover:scale-105 active:scale-95 transition-all"
+            >
+              Go Live
+            </Button>
           )}
-        </Space>
+        </div>
       </div>
 
       <Row gutter={[20, 20]}>
-        {/* Studio Video Viewport */}
-        <Col xs={24} lg={16}>
-          <Card className="bg-card border border-border rounded-2xl overflow-hidden p-0 shadow-sm" variant="borderless">
-            <div className="relative w-full h-[380px] sm:h-[480px] bg-black flex items-center justify-center rounded-xl overflow-hidden">
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+        {/* Left Column: Video Viewport & Stream Details Form */}
+        <Col xs={24} lg={16} className="space-y-4">
+          {/* Main Video Preview Box */}
+          <div className="relative w-full aspect-video bg-navy rounded-2xl overflow-hidden shadow-md border border-border flex items-center justify-center group">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
 
-              {!isStreaming && (
-                <div className="absolute inset-0 bg-navy/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-white">
-                  <VideoCameraOutlined className="text-5xl text-primary mb-4" />
-                  <h3 className="text-2xl font-extrabold text-white mb-2">
-                    Ready to Stream?
-                  </h3>
-                  <p className="text-text text-sm max-w-md mb-6">
-                    Configure your camera and microphone, set a title, and broadcast in sub-second WebRTC quality.
-                  </p>
-                  <Button type="primary" size="large" icon={<VideoCameraOutlined />} onClick={openDeviceCheck} className="bg-primary hover:bg-secondary text-white border-none font-bold rounded-xl px-6 h-12 shadow-lg">
-                    Setup & Start Stream
-                  </Button>
-                </div>
-              )}
+            {/* Bottom Floating Control Bar */}
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-darkPurple/85 backdrop-blur-md px-4 py-2 rounded-full border border-white/15 flex items-center gap-3 shadow-2xl z-10">
+              <Tooltip title={isMuted ? "Unmute Mic" : "Mute Mic"}>
+                <button
+                  onClick={toggleMute}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                    isMuted
+                      ? "bg-red-500 text-white"
+                      : "bg-white/10 hover:bg-white/20 text-white"
+                  }`}
+                >
+                  {isMuted ? <AudioMutedOutlined className="text-base" /> : <AudioOutlined className="text-base" />}
+                </button>
+              </Tooltip>
 
-              {/* Controls Bar Overlay */}
-              {isStreaming && (
-                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-navy/80 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 flex items-center gap-3">
-                  <Tooltip title={isMuted ? "Unmute Mic" : "Mute Mic"}>
-                    <Button
-                      shape="circle"
-                      icon={isMuted ? <AudioMutedOutlined className="text-red-500" /> : <AudioOutlined className="text-white" />}
-                      onClick={toggleMute}
-                      className="bg-darkPurple/80 border-border hover:border-primary"
-                    />
-                  </Tooltip>
-                  <Tooltip title={isCameraOn ? "Turn Off Camera" : "Turn On Camera"}>
-                    <Button
-                      shape="circle"
-                      icon={<VideoCameraOutlined className={isCameraOn ? "text-white" : "text-red-500"} />}
-                      onClick={toggleCamera}
-                      className="bg-darkPurple/80 border-border hover:border-primary"
-                    />
-                  </Tooltip>
-                  <Tooltip title={isScreenSharing ? "Stop Screen Share" : "Share Screen"}>
-                    <Button
-                      shape="circle"
-                      icon={<DesktopOutlined className={isScreenSharing ? "text-secondary" : "text-white"} />}
-                      onClick={toggleScreenShare}
-                      className="bg-darkPurple/80 border-border hover:border-primary"
-                    />
-                  </Tooltip>
-                </div>
-              )}
+              <Tooltip title={isCameraOn ? "Turn Camera Off" : "Turn Camera On"}>
+                <button
+                  onClick={toggleCamera}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                    !isCameraOn
+                      ? "bg-red-500 text-white"
+                      : "bg-white/10 hover:bg-white/20 text-white"
+                  }`}
+                >
+                  <VideoCameraFilled className="text-base" />
+                </button>
+              </Tooltip>
+
+              <Tooltip title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}>
+                <button
+                  onClick={toggleScreenShare}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                    isScreenSharing
+                      ? "bg-primary text-white"
+                      : "bg-white/10 hover:bg-white/20 text-white"
+                  }`}
+                >
+                  <DesktopOutlined className="text-base" />
+                </button>
+              </Tooltip>
+
+              <Tooltip title="Device Setup">
+                <button
+                  onClick={openDeviceCheck}
+                  className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all"
+                >
+                  <SettingOutlined className="text-base" />
+                </button>
+              </Tooltip>
             </div>
+          </div>
+
+          {/* Stream Details Card */}
+          <Card className="bg-card border border-border rounded-2xl shadow-sm p-4 sm:p-5" variant="borderless">
+            <h3 className="text-base font-bold text-darkPurple mb-3">
+              Stream Details
+            </h3>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={12}>
+                <label className="block text-xs font-bold text-darkPurple uppercase tracking-wider mb-1.5">
+                  Title
+                </label>
+                <Input
+                  value={inputTitle}
+                  onChange={(e) => setInputTitle(e.target.value)}
+                  placeholder="Enter stream title..."
+                  className="rounded-xl border-border h-10 text-sm focus:border-primary"
+                  disabled={isStreaming}
+                />
+              </Col>
+
+              <Col xs={12} md={6}>
+                <label className="block text-xs font-bold text-darkPurple uppercase tracking-wider mb-1.5">
+                  Category
+                </label>
+                <Select
+                  value={category}
+                  onChange={setCategory}
+                  className="w-full h-10"
+                  disabled={isStreaming}
+                >
+                  <Option value="Gaming">Gaming</Option>
+                  <Option value="Technology">Technology</Option>
+                  <Option value="Entertainment">Entertainment</Option>
+                  <Option value="Music">Music</Option>
+                  <Option value="Nature">Nature</Option>
+                  <Option value="Education">Education</Option>
+                </Select>
+              </Col>
+
+              <Col xs={12} md={6}>
+                <label className="block text-xs font-bold text-darkPurple uppercase tracking-wider mb-1.5">
+                  Visibility
+                </label>
+                <Select
+                  value={visibility}
+                  onChange={setVisibility}
+                  className="w-full h-10"
+                  disabled={isStreaming}
+                >
+                  <Option value="Public">Public</Option>
+                  <Option value="Unlisted">Unlisted</Option>
+                  <Option value="Private">Private</Option>
+                </Select>
+              </Col>
+            </Row>
           </Card>
         </Col>
 
-        {/* Studio Live Chat Panel */}
+        {/* Right Column: Stream Chat */}
         <Col xs={24} lg={8}>
-          <Card className="bg-card border border-border rounded-2xl shadow-sm flex flex-col h-[480px]" variant="borderless">
-            <div className="flex items-center justify-between pb-3 border-b border-border mb-3">
-              <span className="font-bold text-navy text-base">Stream Chat</span>
-              <span className="text-xs bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full">{viewerCount} viewers</span>
+          <div className="bg-card border border-border rounded-2xl shadow-sm flex flex-col h-[520px] overflow-hidden">
+            {/* Chat Header */}
+            <div className="px-4 py-3.5 border-b border-border flex items-center justify-between bg-background">
+              <span className="font-extrabold text-darkPurple text-sm">
+                Stream Chat
+              </span>
+              <span className="text-xs text-text font-semibold">
+                {viewerCount} {viewerCount === 1 ? "viewer" : "viewers"}
+              </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1 mb-3">
+            {/* Chat Body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {messages.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-center text-xs text-text p-4">
-                  <span>Chat messages will appear here once viewers join and message.</span>
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-text">
+                  <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary text-xl mb-3">
+                    <MessageFilled />
+                  </div>
+                  <h4 className="text-sm font-bold text-darkPurple mb-1">
+                    No messages yet
+                  </h4>
+                  <p className="text-xs text-text max-w-xs leading-relaxed">
+                    Messages will appear here once viewers join and start chatting.
+                  </p>
                 </div>
               ) : (
                 <List
                   dataSource={messages}
                   renderItem={(msg, idx) => {
-                    const isHost = firebaseUser && (msg.username === firebaseUser.displayName || msg.username === firebaseUser.email);
+                    const isHost =
+                      firebaseUser &&
+                      (msg.username === firebaseUser.displayName || msg.username === firebaseUser.email);
                     return (
-                      <div key={idx} className={`p-2.5 rounded-xl border text-xs ${isHost ? "bg-primary/10 border-primary/30" : "bg-background border-border"}`}>
+                      <div
+                        key={idx}
+                        className={`p-2.5 rounded-xl border text-xs ${
+                          isHost ? "bg-primary/10 border-primary/30" : "bg-background border-border"
+                        }`}
+                      >
                         <div className="flex items-center justify-between mb-1">
                           <div className="flex items-center gap-1.5">
-                            <Avatar size="small" className={isHost ? "bg-secondary" : "bg-primary"}>
-                              {msg.username ? msg.username.charAt(0).toUpperCase() : "S"}
+                            <Avatar
+                              size={22}
+                              className={isHost ? "bg-primary" : "bg-slate-400"}
+                            >
+                              {msg.username ? msg.username.charAt(0).toUpperCase() : "V"}
                             </Avatar>
-                            <span className="font-bold text-navy">{msg.username}</span>
+                            <span className="font-bold text-darkPurple">{msg.username}</span>
                             {isHost && (
-                              <Tag color="magenta" icon={<CrownOutlined />} className="text-[10px] m-0 px-1 py-0 border-none">
+                              <Tag color="purple" icon={<CrownFilled />} className="text-[10px] m-0 px-1 py-0 border-none">
                                 Host
                               </Tag>
                             )}
                           </div>
                           <span className="text-[10px] text-text">{msg.time}</span>
                         </div>
-                        <div className="text-text font-normal">{msg.message}</div>
+                        <div className="text-darkPurple">{msg.message}</div>
                       </div>
                     );
                   }}
@@ -528,52 +660,48 @@ const StartStreaming = () => {
               <div ref={chatEndRef} />
             </div>
 
-            <div className="pt-2 border-t border-border">
-              <Space.Compact style={{ width: "100%" }}>
+            {/* Chat Input */}
+            <div className="p-3 border-t border-border bg-card">
+              <div className="flex items-center gap-2">
                 <Input
-                  placeholder="Send chat as host..."
+                  placeholder="Send a message..."
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
                   onPressEnter={sendMessage}
-                  autoComplete="off"
-                  disabled={!isStreaming}
-                  className="rounded-l-lg border-border"
+                  className="rounded-xl border-border h-10 text-xs focus:border-primary"
                 />
-                <Button type="primary" icon={<SendOutlined />} onClick={sendMessage} disabled={!isStreaming} className="bg-primary hover:bg-secondary border-none rounded-r-lg" />
-              </Space.Compact>
+                <Button
+                  type="primary"
+                  icon={<SendOutlined />}
+                  onClick={sendMessage}
+                  className="bg-primary hover:bg-secondary border-none rounded-xl h-10 w-10 flex items-center justify-center p-0 shadow-sm"
+                />
+              </div>
             </div>
-          </Card>
+          </div>
         </Col>
       </Row>
 
       {/* Pre-stream Setup & Device Check Modal */}
       <Modal
-        title={<span className="text-navy font-bold">Stream Setup & Device Check</span>}
+        title={<span className="text-darkPurple font-bold">Device Setup</span>}
         open={isDeviceModalOpen}
         onCancel={closeDeviceCheck}
         footer={[
-          <Button key="cancel" onClick={closeDeviceCheck} className="border-border text-navy">
+          <Button key="cancel" onClick={closeDeviceCheck} className="border-border text-darkPurple rounded-xl">
             Cancel
           </Button>,
-          <Button key="submit" type="primary" icon={<VideoCameraOutlined />} onClick={handleStartStream} className="bg-primary hover:bg-secondary text-white border-none font-bold">
-            Go Live Now
+          <Button
+            key="submit"
+            type="primary"
+            onClick={closeDeviceCheck}
+            className="bg-primary hover:bg-secondary text-white border-none font-bold rounded-xl"
+          >
+            Done
           </Button>,
         ]}
       >
-        <Space direction="vertical" style={{ width: "100%" }} size="middle">
-          <div>
-            <label className="block text-xs font-semibold text-text mb-1">
-              Stream Title *
-            </label>
-            <Input
-              placeholder="e.g. Building Full-Stack Live Stream App!"
-              value={inputTitle}
-              onChange={(e) => setInputTitle(e.target.value)}
-              size="large"
-              className="rounded-lg border-border"
-            />
-          </div>
-
+        <div className="space-y-4 pt-2">
           <Row gutter={12}>
             <Col span={12}>
               <label className="block text-xs font-semibold text-text mb-1">
@@ -620,11 +748,11 @@ const StartStreaming = () => {
             <label className="block text-xs font-semibold text-text mb-1">
               Device Video Preview
             </label>
-            <div className="w-full h-48 bg-black rounded-lg overflow-hidden flex items-center justify-center">
+            <div className="w-full h-44 bg-navy rounded-xl overflow-hidden flex items-center justify-center">
               <video ref={previewVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
             </div>
           </div>
-        </Space>
+        </div>
       </Modal>
     </div>
   );

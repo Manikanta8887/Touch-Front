@@ -1,9 +1,10 @@
 import apiClient from "./client";
 
-export const uploadVideo = async (uid, videoFile, title) => {
+export const uploadVideo = async (uid, videoFile, title, description) => {
   const formData = new FormData();
   formData.append("video", videoFile);
   if (title) formData.append("title", title);
+  if (description) formData.append("description", description);
 
   const response = await apiClient.post(`/api/videos/upload/${uid}`, formData, {
     headers: { "Content-Type": "multipart/form-data" },
@@ -22,10 +23,18 @@ export const getAllVideos = async () => {
 };
 
 export const deleteVideo = async (publicId) => {
-  // BUG-007: public_id can contain slashes (e.g. touch_live_videos/uid/123)
-  // Use query param instead of path segment to prevent routing issues
   const response = await apiClient.delete("/api/videos", {
     params: { public_id: publicId },
   });
+  return response.data;
+};
+
+export const likeVideo = async (videoId) => {
+  const response = await apiClient.post(`/api/videos/like/${videoId}`);
+  return response.data;
+};
+
+export const recordVideoView = async (videoId) => {
+  const response = await apiClient.post(`/api/videos/view/${videoId}`);
   return response.data;
 };

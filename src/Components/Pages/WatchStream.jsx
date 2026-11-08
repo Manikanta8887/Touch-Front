@@ -23,12 +23,11 @@ import {
   EyeOutlined,
   FullscreenOutlined,
   CompressOutlined,
-  CrownOutlined,
+  CrownFilled,
+  ArrowLeftOutlined,
 } from "@ant-design/icons";
 import socket from "../../socket";
 import { getIceServers } from "../../utils/iceServers";
-
-
 
 const WatchStream = () => {
   const { id } = useParams();
@@ -39,7 +38,6 @@ const WatchStream = () => {
   const videoContainerRef = useRef(null);
   const chatEndRef = useRef(null);
   const peerConnectionRef = useRef(null);
-  // BUG-011/BUG-006: Use a ref for streamerSocketId so socket handlers always have current value
   const streamerSocketIdRef = useRef(null);
 
   const [streamInfo, setStreamInfo] = useState(null);
@@ -51,7 +49,6 @@ const WatchStream = () => {
   const [viewerCount, setViewerCount] = useState(0);
 
   const setupPeerConnection = useCallback(async (streamerSocketId) => {
-    // BUG-006: Guard against re-creating peer connection if already established
     if (peerConnectionRef.current) return;
     streamerSocketIdRef.current = streamerSocketId;
 
@@ -116,7 +113,6 @@ const WatchStream = () => {
       setStreamInfo(data);
       if (data.viewers !== undefined) setViewerCount(data.viewers);
 
-      // MISS-003: Replay chat history when viewer joins mid-stream
       if (data.chatMessages && Array.isArray(data.chatMessages) && data.chatMessages.length > 0) {
         const historyMessages = data.chatMessages.map((m) => ({
           username: m.sender,
@@ -146,8 +142,6 @@ const WatchStream = () => {
       cleanupStream();
     };
 
-    // BUG-006: Register offer and ice-candidate listeners here at top-level useEffect
-    // NOT inside setupPeerConnection, to avoid duplicate listener registration
     const handleOffer = async ({ offer, from }) => {
       const pc = peerConnectionRef.current;
       if (!pc) return;
@@ -180,7 +174,6 @@ const WatchStream = () => {
     socket.on("viewer-count", handleViewerCount);
     socket.on("stop-stream", handleStopStream);
     socket.on("stream-ended", handleStreamEnded);
-    // BUG-006: Listeners registered at top-level with specific handler refs for proper cleanup
     socket.on("offer", handleOffer);
     socket.on("ice-candidate", handleIceCandidate);
 
@@ -227,106 +220,147 @@ const WatchStream = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {/* Stream Info Bar */}
-      <div className="bg-card p-4 sm:p-6 rounded-2xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-extrabold text-navy mb-1">
-            {streamInfo ? streamInfo.streamTitle : "Connecting to stream..."}
-          </h2>
-          <div className="flex items-center gap-2">
-            {connectionStatus === "live" && (
-              <span className="bg-red-600 text-white text-xs font-bold px-2.5 py-0.5 rounded-md uppercase tracking-wider animate-pulse">
-                LIVE
-              </span>
-            )}
-            {connectionStatus === "connecting" && <Tag color="warning">Connecting...</Tag>}
-            {connectionStatus === "ended" && <Tag color="error">Stream Ended</Tag>}
+    <div className="max-w-7xl mx-auto space-y-4">
+      {/* Top Stream Info Bar */}
+      <div className="bg-card p-4 sm:p-5 rounded-2xl border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Button
+            type="text"
+            icon={<ArrowLeftOutlined />}
+            onClick={leaveStream}
+            className="text-text hover:text-primary font-semibold p-0 flex items-center"
+          />
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black text-darkPurple tracking-tight mb-1">
+              {streamInfo ? streamInfo.streamTitle : "Connecting to stream..."}
+            </h1>
+            <div className="flex items-center gap-2">
+              {connectionStatus === "live" && (
+                <span className="bg-red-600 text-white text-[11px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+                  LIVE
+                </span>
+              )}
+              {connectionStatus === "connecting" && (
+                <Tag color="warning" className="rounded-full font-semibold">Connecting...</Tag>
+              )}
+              {connectionStatus === "ended" && (
+                <Tag color="error" className="rounded-full font-semibold">Stream Ended</Tag>
+              )}
 
-            <Tag icon={<EyeOutlined />} color="purple" className="border-primary text-primary bg-primary/10">
-              {viewerCount} Watching
-            </Tag>
+              <span className="bg-primary/10 text-primary text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                <EyeOutlined /> {viewerCount} watching
+              </span>
+            </div>
           </div>
         </div>
 
         <Space size="middle">
-          <Button size="small" icon={<CopyOutlined />} onClick={handleCopyLink} className="border-border text-navy font-semibold rounded-lg hover:border-primary hover:text-primary">
+          <Button
+            icon={<CopyOutlined />}
+            onClick={handleCopyLink}
+            className="rounded-xl border-border text-darkPurple font-semibold h-10 px-4 hover:border-primary hover:text-primary"
+          >
             Share
           </Button>
           <Button
-            size="small"
             icon={isTheaterMode ? <CompressOutlined /> : <FullscreenOutlined />}
             onClick={() => setIsTheaterMode(!isTheaterMode)}
-            className="border-border text-navy font-semibold rounded-lg hover:border-primary hover:text-primary"
+            className="rounded-xl border-border text-darkPurple font-semibold h-10 px-4 hover:border-primary hover:text-primary"
           >
             {isTheaterMode ? "Normal View" : "Theater Mode"}
           </Button>
-          <Button danger icon={<LogoutOutlined />} onClick={leaveStream} className="bg-red-600 hover:bg-red-700 text-white border-none font-semibold rounded-lg">
+          <Button
+            danger
+            icon={<LogoutOutlined />}
+            onClick={leaveStream}
+            className="bg-[#EF4444] hover:bg-[#DC2626] text-white border-none font-bold rounded-xl h-10 px-4 shadow-sm"
+          >
             Leave
           </Button>
         </Space>
       </div>
 
       <Row gutter={[20, 20]}>
-        {/* Video Player Section */}
+        {/* Main Video Viewport */}
         <Col xs={24} lg={isTheaterMode ? 24 : 16}>
-          <Card className="bg-card border border-border rounded-2xl overflow-hidden p-0 shadow-sm" variant="borderless">
-            <div className="relative w-full h-[380px] sm:h-[480px] bg-black flex items-center justify-center rounded-xl overflow-hidden" ref={videoContainerRef}>
+          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm p-0">
+            <div
+              className="relative w-full aspect-video bg-black flex items-center justify-center overflow-hidden"
+              ref={videoContainerRef}
+            >
               <video ref={videoRef} autoPlay playsInline controls className="w-full h-full object-cover" />
+
               {connectionStatus === "connecting" && (
                 <div className="absolute inset-0 bg-navy/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-white">
                   <Spin size="large" />
-                  <p className="mt-4 text-sm font-medium text-text">Establishing WebRTC connection with streamer...</p>
+                  <p className="mt-4 text-xs sm:text-sm font-semibold text-purple-200">
+                    Establishing WebRTC sub-second stream connection...
+                  </p>
                 </div>
               )}
+
               {connectionStatus === "ended" && (
-                <div className="absolute inset-0 bg-navy/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-white">
+                <div className="absolute inset-0 bg-navy/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center text-white">
                   <Alert
                     message="Stream Ended"
                     description={error || "The streamer has ended the session."}
                     type="error"
                     showIcon
-                    className="max-w-md"
+                    className="max-w-md rounded-xl"
                   />
-                  <Button type="primary" className="mt-4 bg-primary hover:bg-secondary border-none font-bold rounded-lg" onClick={() => navigate("/livestreamingplatform")}>
+                  <Button
+                    type="primary"
+                    className="mt-4 bg-primary hover:bg-secondary border-none font-bold rounded-xl h-10 px-6 shadow-md"
+                    onClick={() => navigate("/livestreamingplatform")}
+                  >
                     Back to Browse
                   </Button>
                 </div>
               )}
             </div>
-          </Card>
+          </div>
         </Col>
 
-        {/* Live Chat Sidebar */}
+        {/* Live Chat Panel */}
         <Col xs={24} lg={isTheaterMode ? 24 : 8}>
-          <Card className="bg-card border border-border rounded-2xl shadow-sm flex flex-col h-[480px]" variant="borderless">
-            <div className="flex items-center justify-between pb-3 border-b border-border mb-3">
-              <span className="font-bold text-navy text-base">Live Chat</span>
-              <span className="text-xs bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full">{viewerCount} online</span>
+          <div className="bg-card border border-border rounded-2xl shadow-sm flex flex-col h-[520px] overflow-hidden">
+            <div className="px-4 py-3.5 border-b border-border flex items-center justify-between bg-background">
+              <span className="font-extrabold text-darkPurple text-sm">
+                Live Chat
+              </span>
+              <span className="text-xs bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full">
+                {viewerCount} online
+              </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1 mb-3">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
               <List
                 dataSource={messages}
                 renderItem={(msg, idx) => {
                   const isStreamerMsg = streamInfo && msg.username === streamInfo.streamerName;
                   return (
-                    <div key={idx} className={`p-2.5 rounded-xl border text-xs ${isStreamerMsg ? "bg-primary/10 border-primary/30" : "bg-background border-border"}`}>
+                    <div
+                      key={idx}
+                      className={`p-2.5 rounded-xl border text-xs ${
+                        isStreamerMsg ? "bg-primary/10 border-primary/30" : "bg-background border-border"
+                      }`}
+                    >
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-1.5">
-                          <Avatar size="small" className={isStreamerMsg ? "bg-secondary" : "bg-primary"}>
+                          <Avatar size={22} className={isStreamerMsg ? "bg-primary" : "bg-slate-400"}>
                             {msg.username ? msg.username.charAt(0).toUpperCase() : "V"}
                           </Avatar>
-                          <span className="font-bold text-navy">{msg.username}</span>
+                          <span className="font-bold text-darkPurple">{msg.username}</span>
                           {isStreamerMsg && (
-                            <Tag color="magenta" icon={<CrownOutlined />} className="text-[10px] m-0 px-1 py-0 border-none">
+                            <Tag color="purple" icon={<CrownFilled />} className="text-[10px] m-0 px-1 py-0 border-none">
                               Host
                             </Tag>
                           )}
                         </div>
                         <span className="text-[10px] text-text">{msg.time}</span>
                       </div>
-                      <div className="text-text font-normal">{msg.message}</div>
+                      <div className="text-darkPurple">{msg.message}</div>
                     </div>
                   );
                 }}
@@ -334,27 +368,26 @@ const WatchStream = () => {
               <div ref={chatEndRef} />
             </div>
 
-            <div className="pt-2 border-t border-border">
-              <Space.Compact style={{ width: "100%" }}>
+            <div className="p-3 border-t border-border bg-card">
+              <div className="flex items-center gap-2">
                 <Input
                   placeholder="Send a message..."
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
                   onPressEnter={sendMessage}
-                  autoComplete="off"
                   disabled={connectionStatus === "ended"}
-                  className="rounded-l-lg border-border"
+                  className="rounded-xl border-border h-10 text-xs focus:border-primary"
                 />
                 <Button
                   type="primary"
                   icon={<SendOutlined />}
                   onClick={sendMessage}
                   disabled={connectionStatus === "ended"}
-                  className="bg-primary hover:bg-secondary border-none rounded-r-lg"
+                  className="bg-primary hover:bg-secondary border-none rounded-xl h-10 w-10 flex items-center justify-center p-0 shadow-sm"
                 />
-              </Space.Compact>
+              </div>
             </div>
-          </Card>
+          </div>
         </Col>
       </Row>
     </div>
