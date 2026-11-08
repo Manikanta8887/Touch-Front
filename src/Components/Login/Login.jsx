@@ -19,6 +19,7 @@ import { Auth, GoogleProvider } from "../Firebase/Firebaseconfig";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { saveUser } from "../../api/users";
+import { exchangeForTokens } from "../../api/auth";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -39,6 +40,11 @@ const Login = () => {
       };
 
       await saveUser(userData, token);
+      try {
+        await exchangeForTokens(userData, token);
+      } catch (tokenErr) {
+        console.warn("Token exchange warning:", tokenErr);
+      }
       toast.success(`${loginType} Login Successful!`);
       setTimeout(() => navigate("/livestreamingplatform", { replace: true }), 1000);
     } catch (error) {
@@ -202,7 +208,7 @@ const Login = () => {
               <>
                 <div className="mb-6">
                   <h2 className="text-2xl sm:text-3xl font-extrabold text-darkPurple tracking-tight mb-1">
-                    Welcome Back 👋
+                    Welcome Back
                   </h2>
                   <p className="text-sm text-text font-normal">
                     Log in to continue to Touch Live

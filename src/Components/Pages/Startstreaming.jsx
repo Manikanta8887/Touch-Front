@@ -240,7 +240,7 @@ const StartStreaming = () => {
         profilePic,
       });
 
-      message.success("🔴 You are now live!");
+      message.success("You are now live!");
     } catch (err) {
       console.error("Media error starting stream:", err);
       message.error("Failed to access media devices. Please grant camera/microphone permissions.");
@@ -412,8 +412,11 @@ const StartStreaming = () => {
       {/* Top Header Bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl sm:text-2xl font-extrabold text-darkPurple tracking-tight flex items-center gap-2">
-            <span>🎥 Stream Studio</span>
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary text-lg sm:text-xl flex-shrink-0">
+            <VideoCameraFilled />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-darkPurple tracking-tight">
+            Stream Studio
           </h1>
           {/* Status Badge */}
           {isStreaming ? (

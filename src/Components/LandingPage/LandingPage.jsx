@@ -16,6 +16,10 @@ import {
   FullscreenOutlined,
   PauseOutlined,
   HeartFilled,
+  RocketOutlined,
+  CompassOutlined,
+  LaptopOutlined,
+  ReadOutlined,
 } from "@ant-design/icons";
 import { Link, useNavigate } from "react-router-dom";
 import AppHeader from "./Header";
@@ -24,37 +28,37 @@ import Landimage1 from "../../assets/landimage.svg";
 const CATEGORIES = [
   {
     name: "Gaming",
-    icon: "🎮",
+    icon: <RocketOutlined />,
     image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80",
     query: "Gaming",
   },
   {
     name: "Entertainment",
-    icon: "🎬",
+    icon: <VideoCameraOutlined />,
     image: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=600&q=80",
     query: "Entertainment",
   },
   {
     name: "Travel",
-    icon: "⛰",
+    icon: <CompassOutlined />,
     image: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=600&q=80",
     query: "Travel",
   },
   {
     name: "Music",
-    icon: "🎵",
+    icon: <SoundOutlined />,
     image: "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=600&q=80",
     query: "Music",
   },
   {
     name: "Tech",
-    icon: "💻",
+    icon: <LaptopOutlined />,
     image: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=600&q=80",
     query: "Tech",
   },
   {
     name: "Education",
-    icon: "🎓",
+    icon: <ReadOutlined />,
     image: "https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&w=600&q=80",
     query: "Education",
   },

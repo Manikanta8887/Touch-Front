@@ -15,19 +15,35 @@ import {
   PlayCircleFilled,
   BellOutlined,
   SearchOutlined,
+  UsergroupAddOutlined,
 } from "@ant-design/icons";
 import { Outlet, useLocation, useNavigate, Link } from "react-router-dom";
+import { getSubscribedChannels } from "../../api/profile";
+import { logoutTokensApi, getRefreshToken } from "../../api/auth";
 
 const { Header, Content } = Layout;
 
 const LiveStreamingPlatform = () => {
   const [collapsed, setCollapsed] = useState(window.innerWidth < 1024);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [subscribedChannels, setSubscribedChannels] = useState([]);
   const auth = getAuth();
   const dispatch = useDispatch();
   const firebaseUser = useSelector((state) => state.user.firebaseUser);
   const location = useLocation();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (firebaseUser?.uid) {
+      getSubscribedChannels(firebaseUser.uid)
+        .then((res) => {
+          if (res?.channels) setSubscribedChannels(res.channels);
+        })
+        .catch(() => {});
+    } else {
+      setSubscribedChannels([]);
+    }
+  }, [firebaseUser?.uid]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -59,6 +75,10 @@ const LiveStreamingPlatform = () => {
 
   const handleLogout = async () => {
     try {
+      const refreshToken = getRefreshToken();
+      if (refreshToken) {
+        await logoutTokensApi(refreshToken);
+      }
       await signOut(auth);
       dispatch(logoutUser());
       navigate("/login");
@@ -81,9 +101,15 @@ const LiveStreamingPlatform = () => {
     },
     {
       key: "/livestreamingplatform/videos",
-      label: "Uploaded Videos",
+      label: "Videos",
       icon: <PlaySquareFilled />,
       path: "/livestreamingplatform/videos",
+    },
+    {
+      key: "/livestreamingplatform/subscriptions",
+      label: "Subscriptions",
+      icon: <UsergroupAddOutlined />,
+      path: "/livestreamingplatform?tab=subscriptions",
     },
     {
       key: "stream",
@@ -159,6 +185,37 @@ const LiveStreamingPlatform = () => {
             </button>
           );
         })}
+
+        {/* Subscribed Channels Sidebar Section */}
+        {(!collapsed || isMobile) && subscribedChannels.length > 0 && (
+          <div className="pt-4 mt-3 border-t border-white/10">
+            <div className="flex items-center justify-between px-3 mb-2">
+              <span className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                Subscriptions
+              </span>
+              <span className="text-[10px] font-bold bg-white/10 text-white/80 px-2 py-0.5 rounded-full">
+                {subscribedChannels.length}
+              </span>
+            </div>
+            <div className="space-y-1">
+              {subscribedChannels.map((channel) => (
+                <div
+                  key={channel.uid}
+                  onClick={() => {
+                    navigate(`/livestreamingplatform/profile/${channel.uid}`);
+                    if (isMobile) setMobileDrawerOpen(false);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer transition-colors"
+                >
+                  <Avatar size={24} src={channel.profilePic} className="bg-primary flex-shrink-0">
+                    {channel.name?.charAt(0).toUpperCase() || "C"}
+                  </Avatar>
+                  <span className="text-xs font-semibold truncate flex-1">{channel.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bottom Profile & Logout Section */}

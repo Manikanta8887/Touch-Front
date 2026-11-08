@@ -19,6 +19,7 @@ import { Auth, GoogleProvider } from "../Firebase/Firebaseconfig";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { saveUser } from "../../api/users";
+import { exchangeForTokens } from "../../api/auth";
 
 const Signup = () => {
   const navigate = useNavigate();
@@ -51,6 +52,11 @@ const Signup = () => {
         profilePic: user.photoURL || "",
       };
       await saveUser(userData, token);
+      try {
+        await exchangeForTokens(userData, token);
+      } catch (tokenErr) {
+        console.warn("Token exchange warning:", tokenErr);
+      }
       toast.success("Account created successfully! Redirecting...");
       setTimeout(() => navigate("/livestreamingplatform", { replace: true }), 1000);
     } catch (error) {
@@ -159,7 +165,7 @@ const Signup = () => {
           <div className="max-w-md w-full mx-auto">
             <div className="mb-6">
               <h2 className="text-2xl sm:text-3xl font-extrabold text-darkPurple tracking-tight mb-1">
-                Create Your Account 🎉
+                Create Your Account
               </h2>
               <p className="text-sm text-text font-normal">
                 Join Touch Live and start streaming today

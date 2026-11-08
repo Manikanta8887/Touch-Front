@@ -13,6 +13,7 @@ import {
   Skeleton,
   Dropdown,
   List,
+  Tooltip,
 } from "antd";
 import {
   UploadOutlined,
@@ -27,13 +28,18 @@ import {
   PlayCircleFilled,
   MessageFilled,
   UsergroupAddOutlined,
+  ExportOutlined,
+  ThunderboltFilled,
+  CheckOutlined,
 } from "@ant-design/icons";
 import { useSelector, useDispatch } from "react-redux";
 import { updateUser } from "../Redux/userSlice.js";
 import { useParams, useNavigate } from "react-router-dom";
-import { getUserProfile, updateUserProfile } from "../../api/profile";
+import { Auth } from "../Firebase/Firebaseconfig";
+import { getUserProfile, updateUserProfile, getSubscribedChannels, toggleSubscribeUser } from "../../api/profile";
 import { getUserVideos, getAllVideos, uploadVideo, deleteVideo } from "../../api/videos";
 import { getPastStreams, getStreamChat } from "../../api/streams";
+import ReelsModal from "../Common/ReelsModal";
 
 const MAX_STORAGE = 1024 * 1024 * 1024; // 1 GB allocation
 
@@ -43,13 +49,22 @@ export default function ProfilePage() {
   const dispatch = useDispatch();
   const loggedInUser = useSelector((s) => s.user.firebaseUser);
   const reduxBio = useSelector((s) => s.user.bio);
-  const isPublic = uid && uid !== loggedInUser?.uid;
+  
+  const authUser = Auth?.currentUser;
+  const currentUser = loggedInUser || authUser;
+  const isPublic = Boolean(uid && uid !== currentUser?.uid);
+  const targetUid = isPublic ? uid : currentUser?.uid;
 
   const [profileData, setProfileData] = useState(null);
   const [videos, setVideos] = useState([]);
   const [pastStreams, setPastStreams] = useState([]);
+  const [subscribedChannels, setSubscribedChannels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+
+  // Reels Modal State
+  const [reelsOpen, setReelsOpen] = useState(false);
+  const [selectedReelIndex, setSelectedReelIndex] = useState(0);
 
   // Edit Profile Modal State
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -69,27 +84,32 @@ export default function ProfilePage() {
   const [streamChatMessages, setStreamChatMessages] = useState([]);
   const [loadingChat, setLoadingChat] = useState(false);
 
-  const targetUid = isPublic ? uid : loggedInUser?.uid;
-
   const loadProfileData = useCallback(async () => {
     setLoading(true);
     try {
       if (isPublic && targetUid) {
-        const profRes = await getUserProfile(targetUid);
-        if (profRes?.data?.user) {
-          setProfileData(profRes.data.user);
+        try {
+          const profRes = await getUserProfile(targetUid);
+          if (profRes?.data?.user) {
+            setProfileData(profRes.data.user);
+          } else {
+            setProfileData({ uid: targetUid, name: "Streamer", bio: "", subscribersCount: 0 });
+          }
+        } catch (e) {
+          console.warn("Could not fetch public profile:", e);
+          setProfileData({ uid: targetUid, name: "Streamer", bio: "", subscribersCount: 0 });
         }
-      } else if (loggedInUser) {
-        setProfileData(loggedInUser);
-        setNameInput(loggedInUser.displayName || "");
+      } else if (currentUser) {
+        setProfileData(currentUser);
+        setNameInput(currentUser.displayName || "");
         setBioInput(reduxBio || "");
-        setProfilePicInput(loggedInUser.photoURL || "");
+        setProfilePicInput(currentUser.photoURL || "");
 
         try {
-          const res = await getUserProfile(loggedInUser.uid);
+          const res = await getUserProfile(currentUser.uid);
           if (res?.data?.user) {
             const u = res.data.user;
-            setNameInput(u.name || loggedInUser.displayName || "");
+            setNameInput(u.name || currentUser.displayName || "");
             if (u.bio) setBioInput(u.bio);
             if (u.profilePic) setProfilePicInput(u.profilePic);
             setProfileData((prev) => ({ ...prev, ...u }));
@@ -100,28 +120,55 @@ export default function ProfilePage() {
       }
 
       // Fetch user videos
-      let vRes;
-      if (targetUid) {
-        vRes = await getUserVideos(targetUid);
-      } else {
-        vRes = await getAllVideos();
-      }
+      try {
+        let vRes;
+        if (targetUid) {
+          vRes = await getUserVideos(targetUid);
+        } else {
+          vRes = await getAllVideos();
+        }
 
-      if (vRes?.data?.videos) {
-        setVideos(vRes.data.videos);
-      } else if (Array.isArray(vRes?.videos)) {
-        setVideos(vRes.videos);
-      } else if (Array.isArray(vRes)) {
-        setVideos(vRes);
+        if (Array.isArray(vRes?.data?.videos)) {
+          setVideos(vRes.data.videos);
+        } else if (Array.isArray(vRes?.videos)) {
+          setVideos(vRes.videos);
+        } else if (Array.isArray(vRes)) {
+          setVideos(vRes);
+        } else {
+          setVideos([]);
+        }
+      } catch (e) {
+        console.warn("Could not fetch user videos:", e);
+        setVideos([]);
       }
 
       // Fetch past streams
       if (targetUid) {
-        const streamRes = await getPastStreams(targetUid);
-        if (streamRes?.data?.streams) {
-          setPastStreams(streamRes.data.streams);
-        } else if (Array.isArray(streamRes)) {
-          setPastStreams(streamRes);
+        try {
+          const streamRes = await getPastStreams(targetUid);
+          if (Array.isArray(streamRes?.data?.streams)) {
+            setPastStreams(streamRes.data.streams);
+          } else if (Array.isArray(streamRes)) {
+            setPastStreams(streamRes);
+          } else {
+            setPastStreams([]);
+          }
+        } catch (e) {
+          console.warn("Could not fetch past streams:", e);
+          setPastStreams([]);
+        }
+
+        // Fetch subscriptions
+        try {
+          const subRes = await getSubscribedChannels(targetUid);
+          if (Array.isArray(subRes?.channels)) {
+            setSubscribedChannels(subRes.channels);
+          } else {
+            setSubscribedChannels([]);
+          }
+        } catch (e) {
+          console.warn("Could not fetch subscriptions for profile:", e);
+          setSubscribedChannels([]);
         }
       }
     } catch (err) {
@@ -129,22 +176,33 @@ export default function ProfilePage() {
     } finally {
       setLoading(false);
     }
-  }, [isPublic, targetUid, loggedInUser, reduxBio]);
+  }, [isPublic, targetUid, currentUser, reduxBio]);
 
   useEffect(() => {
     loadProfileData();
   }, [loadProfileData]);
 
-  const usedBytes = useMemo(
-    () => videos.reduce((sum, v) => sum + (v.sizeInBytes || 0), 0),
-    [videos]
-  );
+  const safeVideos = Array.isArray(videos) ? videos : [];
+  const safePastStreams = Array.isArray(pastStreams) ? pastStreams : [];
+  const safeSubscribedChannels = Array.isArray(subscribedChannels) ? subscribedChannels : [];
+
+  const usedBytes = useMemo(() => {
+    if (profileData?.storageUsed !== undefined && profileData?.storageUsed !== null) {
+      return Number(profileData.storageUsed) || 0;
+    }
+    return safeVideos.reduce((sum, v) => sum + (Number(v?.sizeInBytes) || 0), 0);
+  }, [profileData?.storageUsed, safeVideos]);
+
+  const limitBytes = Number(profileData?.storageLimit) || MAX_STORAGE;
+  const limitGB = Math.max(1, Math.round(limitBytes / (1024 * 1024 * 1024)));
   const usedMB = (usedBytes / (1024 * 1024)).toFixed(1);
-  const storagePercent = Math.min(100, parseFloat(((usedBytes / MAX_STORAGE) * 100).toFixed(1)));
+  const storagePercent = Number.isFinite(usedBytes)
+    ? Math.min(100, Math.max(0, parseFloat(((usedBytes / limitBytes) * 100).toFixed(1))))
+    : 0;
 
   // Save Edited Profile
   const handleUpdateProfile = async () => {
-    if (!loggedInUser) return;
+    if (!currentUser) return;
     setSavingProfile(true);
     try {
       const updatePayload = {
@@ -152,7 +210,7 @@ export default function ProfilePage() {
         bio: bioInput.trim(),
         profilePic: profilePicInput.trim() || undefined,
       };
-      const res = await updateUserProfile(loggedInUser.uid, updatePayload);
+      const res = await updateUserProfile(currentUser.uid, updatePayload);
       if (res.success) {
         dispatch(updateUser(updatePayload));
         setProfileData((prev) => ({
@@ -183,10 +241,10 @@ export default function ProfilePage() {
     try {
       const title = videoTitle.trim() || "Uploaded Video";
       const desc = videoDescription.trim();
-      const userUid = loggedInUser?.uid || "guest";
+      const userUid = currentUser?.uid || "guest";
       const res = await uploadVideo(userUid, selectedFile, title, desc);
       if (res.success && res.data && res.data.video) {
-        setVideos((prev) => [res.data.video, ...prev]);
+        setVideos((prev) => [res.data.video, ...(Array.isArray(prev) ? prev : [])]);
         message.success("Video uploaded successfully to Cloudinary!");
         setUploadModalOpen(false);
         setSelectedFile(null);
@@ -252,19 +310,24 @@ export default function ProfilePage() {
     );
   }
 
-  const displayName = profileData?.name || profileData?.displayName || "Streamer";
-  const displayEmail = profileData?.email || "";
+  const displayName = profileData?.name || profileData?.displayName || currentUser?.displayName || "Streamer";
+  const displayEmail = profileData?.email || currentUser?.email || "";
   const displayBio = profileData?.bio || (isPublic ? "No bio provided." : "Click 'Edit Profile' to add a custom bio.");
-  const displayAvatar = profileData?.profilePic || profileData?.photoURL || null;
+  const displayAvatar = profileData?.profilePic || profileData?.photoURL || currentUser?.photoURL || null;
   const subscribersCount = profileData?.subscribersCount || profileData?.subscribers?.length || 0;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Top Header & Action Buttons */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl sm:text-2xl font-extrabold text-darkPurple tracking-tight flex items-center gap-2">
-          <span>👤 My Profile</span>
-        </h1>
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary text-lg sm:text-xl flex-shrink-0">
+            <UserOutlined />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-darkPurple tracking-tight">
+            My Profile
+          </h1>
+        </div>
 
         {!isPublic && (
           <div className="flex items-center gap-3">
@@ -327,43 +390,43 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* 4 Stats Cards */}
+      {/* 5 Stats Cards */}
       <Row gutter={[16, 16]}>
-        <Col xs={12} sm={6}>
+        <Col xs={12} sm={8} lg={4}>
           <div className="bg-card rounded-2xl border border-border p-4 shadow-sm flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center text-xl flex-shrink-0">
+            <div className="w-11 h-11 rounded-xl bg-primary/10 text-primary flex items-center justify-center text-xl flex-shrink-0">
               <PlaySquareFilled />
             </div>
             <div>
-              <div className="text-xl sm:text-2xl font-black text-darkPurple">
-                {videos.length}
+              <div className="text-xl font-black text-darkPurple">
+                {safeVideos.length}
               </div>
               <div className="text-xs text-text font-semibold">Videos</div>
             </div>
           </div>
         </Col>
 
-        <Col xs={12} sm={6}>
+        <Col xs={12} sm={8} lg={4}>
           <div className="bg-card rounded-2xl border border-border p-4 shadow-sm flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-secondary/10 text-secondary flex items-center justify-center text-xl flex-shrink-0">
+            <div className="w-11 h-11 rounded-xl bg-secondary/10 text-secondary flex items-center justify-center text-xl flex-shrink-0">
               <VideoCameraFilled />
             </div>
             <div>
-              <div className="text-xl sm:text-2xl font-black text-darkPurple">
-                {pastStreams.length}
+              <div className="text-xl font-black text-darkPurple">
+                {safePastStreams.length}
               </div>
               <div className="text-xs text-text font-semibold">Streams</div>
             </div>
           </div>
         </Col>
 
-        <Col xs={12} sm={6}>
+        <Col xs={12} sm={8} lg={5}>
           <div className="bg-card rounded-2xl border border-border p-4 shadow-sm flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl flex-shrink-0">
+            <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl flex-shrink-0">
               <UsergroupAddOutlined />
             </div>
             <div>
-              <div className="text-xl sm:text-2xl font-black text-darkPurple">
+              <div className="text-xl font-black text-darkPurple">
                 {subscribersCount}
               </div>
               <div className="text-xs text-text font-semibold">Subscribers</div>
@@ -371,15 +434,30 @@ export default function ProfilePage() {
           </div>
         </Col>
 
-        <Col xs={12} sm={6}>
-          <div className="bg-card rounded-2xl border border-border p-4 shadow-sm flex flex-col justify-center">
-            <div className="flex justify-between items-center text-xs mb-1.5 font-bold">
-              <span className="text-text">Storage Used</span>
-              <span className="text-darkPurple">{usedMB} MB / 1 GB</span>
+        <Col xs={12} sm={8} lg={5}>
+          <div className="bg-card rounded-2xl border border-border p-4 shadow-sm flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-purple-50 text-primary flex items-center justify-center text-lg flex-shrink-0">
+              <CheckOutlined />
+            </div>
+            <div>
+              <div className="text-xl font-black text-darkPurple">
+                {safeSubscribedChannels.length}
+              </div>
+              <div className="text-xs text-text font-semibold">Subscribed</div>
+            </div>
+          </div>
+        </Col>
+
+        <Col xs={24} sm={16} lg={6}>
+          <div className="bg-card rounded-2xl border border-border p-4 shadow-sm flex flex-col justify-center h-full">
+            <div className="flex justify-between items-center text-xs sm:text-sm mb-2 font-bold">
+              <span className="text-[#64748B] font-semibold">Storage Used</span>
+              <span className="text-darkPurple font-black">{usedMB} MB / {limitGB} GB</span>
             </div>
             <Progress
               percent={storagePercent}
               strokeColor="#A34BD0"
+              trailColor="#F1F5F9"
               showInfo={false}
               size="small"
             />
@@ -396,12 +474,12 @@ export default function ProfilePage() {
             key: "videos",
             label: (
               <span className="font-bold text-sm">
-                Channel Videos ({videos.length})
+                Channel Videos ({safeVideos.length})
               </span>
             ),
             children: (
               <div className="mt-4">
-                {videos.length === 0 ? (
+                {safeVideos.length === 0 ? (
                   <div className="text-center py-12 text-text">
                     <Empty
                       description="No videos uploaded yet. Click 'Upload Video' above to upload your first clip!"
@@ -409,19 +487,23 @@ export default function ProfilePage() {
                   </div>
                 ) : (
                   <Row gutter={[20, 20]}>
-                    {videos.map((vid, idx) => {
+                    {safeVideos.map((vid, idx) => {
                       const videoId = vid._id || encodeURIComponent(vid.public_id || idx);
                       const dateText = vid.createdAt ? new Date(vid.createdAt).toLocaleDateString() : "";
                       const sizeMB = vid.sizeInBytes ? `${(vid.sizeInBytes / (1024 * 1024)).toFixed(1)} MB` : "0 MB";
 
                       return (
                         <Col xs={24} sm={12} md={8} lg={6} key={vid._id || vid.public_id || idx}>
-                          <div
-                            onClick={() => navigate(`/livestreamingplatform/video/${videoId}`)}
-                            className="bg-card rounded-2xl border border-border hover:border-primary hover:shadow-md transition-all overflow-hidden cursor-pointer group flex flex-col"
-                          >
-                            {/* Video Thumbnail */}
-                            <div className="relative w-full aspect-video bg-black overflow-hidden flex items-center justify-center">
+                          <div className="bg-card rounded-2xl border border-border hover:border-primary hover:shadow-md transition-all overflow-hidden group flex flex-col">
+                            {/* Video Thumbnail: Click to watch as Instagram Reel */}
+                            <div
+                              onClick={() => {
+                                setSelectedReelIndex(idx);
+                                setReelsOpen(true);
+                              }}
+                              className="relative w-full aspect-video bg-black overflow-hidden flex items-center justify-center cursor-pointer"
+                              title="Click video to watch as Reel"
+                            >
                               <img
                                 src={vid.coverImage || vid.url}
                                 alt={vid.title}
@@ -430,7 +512,7 @@ export default function ProfilePage() {
                                   e.target.style.display = "none";
                                 }}
                               />
-                              <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                              <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                 <PlayCircleFilled className="text-3xl text-white group-hover:scale-110 transition-transform drop-shadow" />
                               </div>
                               {vid.duration && vid.duration !== "0:00" && (
@@ -440,9 +522,13 @@ export default function ProfilePage() {
                               )}
                             </div>
 
-                            {/* Details */}
-                            <div className="p-3.5 flex items-start justify-between gap-2">
-                              <div className="min-w-0">
+                            {/* Details: Click to open full watch page */}
+                            <div
+                              onClick={() => navigate(`/livestreamingplatform/video/${videoId}`)}
+                              className="p-3.5 flex items-start justify-between gap-2 cursor-pointer hover:bg-black/[0.02] transition-colors"
+                              title="Click details for full watch page"
+                            >
+                              <div className="min-w-0 flex-1">
                                 <h4 className="text-sm font-bold text-darkPurple truncate group-hover:text-primary transition-colors mb-1">
                                   {vid.title || "Untitled Video"}
                                 </h4>
@@ -453,32 +539,46 @@ export default function ProfilePage() {
                                 </div>
                               </div>
 
-                              {!isPublic && (
-                                <Dropdown
-                                  menu={{
-                                    items: [
-                                      {
-                                        key: "delete",
-                                        danger: true,
-                                        icon: <DeleteOutlined />,
-                                        label: "Delete Video",
-                                        onClick: (e) => {
-                                          e.domEvent.stopPropagation();
-                                          handleDeleteVideo(vid.public_id);
-                                        },
-                                      },
-                                    ],
-                                  }}
-                                  trigger={["click"]}
-                                >
+                              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                <Tooltip title="Watch on standard page">
                                   <button
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="text-text hover:text-darkPurple p-1 rounded-md"
+                                    onClick={() => navigate(`/livestreamingplatform/video/${videoId}`)}
+                                    className="text-text hover:text-primary p-1.5 rounded-lg border-none bg-transparent cursor-pointer"
                                   >
-                                    <MoreOutlined />
+                                    <ExportOutlined />
                                   </button>
-                                </Dropdown>
-                              )}
+                                </Tooltip>
+
+                                {!isPublic && (
+                                  <Dropdown
+                                    menu={{
+                                      items: [
+                                        {
+                                          key: "watch-reel",
+                                          label: "Watch as Reel",
+                                          icon: <ThunderboltFilled className="text-primary" />,
+                                          onClick: () => {
+                                            setSelectedReelIndex(idx);
+                                            setReelsOpen(true);
+                                          },
+                                        },
+                                        {
+                                          key: "delete",
+                                          danger: true,
+                                          icon: <DeleteOutlined />,
+                                          label: "Delete Video",
+                                          onClick: () => handleDeleteVideo(vid.public_id),
+                                        },
+                                      ],
+                                    }}
+                                    trigger={["click"]}
+                                  >
+                                    <button className="text-text hover:text-darkPurple p-1 rounded-md border-none bg-transparent cursor-pointer">
+                                      <MoreOutlined />
+                                    </button>
+                                  </Dropdown>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </Col>
@@ -493,18 +593,18 @@ export default function ProfilePage() {
             key: "streams",
             label: (
               <span className="font-bold text-sm">
-                Stream History ({pastStreams.length})
+                Stream History ({safePastStreams.length})
               </span>
             ),
             children: (
               <div className="mt-4">
-                {pastStreams.length === 0 ? (
+                {safePastStreams.length === 0 ? (
                   <div className="text-center py-12 text-text">
                     <Empty description="No recorded stream sessions found." />
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {pastStreams.map((st, i) => {
+                    {safePastStreams.map((st, i) => {
                       const durationStr = st.duration
                         ? `${Math.floor(st.duration / 60)}:${(st.duration % 60).toString().padStart(2, "0")}`
                         : "0:00";
@@ -546,6 +646,87 @@ export default function ProfilePage() {
                       );
                     })}
                   </div>
+                )}
+              </div>
+            ),
+          },
+          {
+            key: "subscriptions",
+            label: (
+              <span className="font-bold text-sm">
+                Subscribed Channels ({safeSubscribedChannels.length})
+              </span>
+            ),
+            children: (
+              <div className="mt-4">
+                {safeSubscribedChannels.length === 0 ? (
+                  <div className="text-center py-12 text-text">
+                    <Empty
+                      description="You haven't subscribed to any creators yet. Explore streams to follow channels!"
+                    />
+                  </div>
+                ) : (
+                  <Row gutter={[20, 20]}>
+                    {safeSubscribedChannels.map((channel) => (
+                      <Col xs={24} sm={12} md={8} lg={6} key={channel.uid}>
+                        <div className="bg-card rounded-2xl border border-border p-4 shadow-sm flex flex-col justify-between hover:border-primary transition-all group">
+                          <div>
+                            <div className="flex items-start gap-3 mb-3">
+                              <Avatar size={48} src={channel.profilePic} className="bg-primary flex-shrink-0">
+                                {channel.name?.charAt(0).toUpperCase() || "C"}
+                              </Avatar>
+                              <div className="min-w-0 flex-1">
+                                <h4
+                                  onClick={() => navigate(`/livestreamingplatform/profile/${channel.uid}`)}
+                                  className="text-sm font-bold text-darkPurple truncate group-hover:text-primary transition-colors cursor-pointer"
+                                >
+                                  {channel.name}
+                                </h4>
+                                <p className="text-xs text-text truncate mt-0.5">
+                                  {channel.subscribersCount || channel.subscribers?.length || 0} subscribers
+                                </p>
+                              </div>
+                            </div>
+                            {channel.bio && (
+                              <p className="text-xs text-text line-clamp-2 mb-3">
+                                {channel.bio}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 pt-2 border-t border-border mt-2">
+                            <Button
+                              type="default"
+                              size="small"
+                              block
+                              onClick={() => navigate(`/livestreamingplatform/profile/${channel.uid}`)}
+                              className="rounded-xl text-xs font-semibold"
+                            >
+                              Visit Channel
+                            </Button>
+                            {!isPublic && (
+                              <Button
+                                type="text"
+                                danger
+                                size="small"
+                                onClick={async () => {
+                                  try {
+                                    await toggleSubscribeUser(channel.uid, currentUser?.uid);
+                                    setSubscribedChannels((prev) => (Array.isArray(prev) ? prev.filter((c) => c.uid !== channel.uid) : []));
+                                    message.success("Unsubscribed successfully");
+                                  } catch (e) {
+                                    console.warn("Unsubscribe error:", e);
+                                  }
+                                }}
+                                className="rounded-xl text-xs"
+                              >
+                                Unsubscribe
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </Col>
+                    ))}
+                  </Row>
                 )}
               </div>
             ),
@@ -763,6 +944,14 @@ export default function ProfilePage() {
           </div>
         )}
       </Modal>
+
+      {/* Instagram Reels Modal */}
+      <ReelsModal
+        isOpen={reelsOpen}
+        onClose={() => setReelsOpen(false)}
+        videos={safeVideos}
+        initialIndex={selectedReelIndex}
+      />
     </div>
   );
 }
